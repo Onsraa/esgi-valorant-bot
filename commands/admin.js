@@ -1,16 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { SessionType, User } = require('../database/models');
+const { isAdmin } = require('../utils/auth');
 const config = require('../config');
-
-// Vérifier si l'utilisateur a un rôle spécifique
-async function hasRole(member, roleId) {
-    return member.roles.cache.has(roleId);
-}
-
-// Vérifier si l'utilisateur est un administrateur
-async function isAdmin(member) {
-    return await hasRole(member, config.adminRoleId);
-}
 
 // Commande pour ajouter un type de session
 async function handleAddSessionType(message, args) {
@@ -150,7 +141,7 @@ module.exports = {
             }
 
             // Vérifier que l'utilisateur est un administrateur pour les autres commandes
-            if (!await isAdmin(message.member)) {
+            if (!await isAdmin(message.author.id)) {
                 return message.reply('Vous n\'avez pas les permissions nécessaires pour effectuer cette action.');
             }
 

@@ -1,21 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { PendingSession } = require('../database/models');
+const { isStaff } = require('../utils/auth');
 const config = require('../config');
-
-// Vérifier si l'utilisateur a un rôle spécifique
-async function hasRole(member, roleId) {
-    return member.roles.cache.has(roleId);
-}
-
-// Vérifier si l'utilisateur est un administrateur
-async function isAdmin(member) {
-    return await hasRole(member, config.adminRoleId);
-}
-
-// Vérifier si l'utilisateur est un membre du staff
-async function isStaff(member) {
-    return await hasRole(member, config.staffRoleId) || await isAdmin(member);
-}
 
 // Commande pour lister les annonces en attente
 async function handlePendingList(message, args) {
@@ -56,7 +42,7 @@ module.exports = {
     async execute(client, message, args) {
         try {
             // Vérifier que l'utilisateur est un membre du staff
-            if (!await isStaff(message.member)) {
+            if (!await isStaff(message.author.id)) {
                 return message.reply('Vous n\'avez pas les permissions nécessaires pour effectuer cette action.');
             }
 

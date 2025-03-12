@@ -1,28 +1,14 @@
 const { EmbedBuilder } = require('discord.js');
+const { isAdmin, isStaff } = require('../utils/auth');
 const config = require('../config');
-
-// Vérifier si l'utilisateur a un rôle spécifique
-async function hasRole(member, roleId) {
-    return member.roles.cache.has(roleId);
-}
-
-// Vérifier si l'utilisateur est un administrateur
-async function isAdmin(member) {
-    return await hasRole(member, config.adminRoleId);
-}
-
-// Vérifier si l'utilisateur est un membre du staff
-async function isStaff(member) {
-    return await hasRole(member, config.staffRoleId) || await isAdmin(member);
-}
 
 module.exports = {
     names: ['help', 'aide'],
 
     async execute(client, message, args) {
         try {
-            const isUserAdmin = await isAdmin(message.member);
-            const isUserStaff = await isStaff(message.member);
+            const isUserAdmin = await isAdmin(message.author.id);
+            const isUserStaff = await isStaff(message.author.id);
 
             const embed = new EmbedBuilder()
                 .setTitle('Commandes disponibles')
@@ -35,7 +21,10 @@ module.exports = {
                     '`!editer` - Éditer votre profil\n' +
                     '`!annoncer` - Annoncer des sessions\n' +
                     '`!help` - Afficher cette aide\n' +
-                    '`!sessionlist` - Lister les types de sessions'
+                    '`!sessionlist` - Lister les types de sessions\n' +
+                    '`!listsemesters` - Lister les semestres\n' +
+                    '`!semesterpoints` - Voir vos points pour un semestre\n' +
+                    '`!semesterranking` - Voir le classement d\'un semestre'
             });
 
             // Commandes pour le staff
@@ -43,18 +32,28 @@ module.exports = {
                 embed.addFields({
                     name: 'Commandes staff',
                     value: '`!profil @utilisateur` - Afficher le profil d\'un utilisateur\n' +
-                        '`!pendinglist` - Lister les annonces en attente'
+                        '`!pendinglist` - Lister les annonces en attente\n' +
+                        '`!semesterpoints @utilisateur [id]` - Voir les points d\'un utilisateur pour un semestre'
                 });
             }
 
             // Commandes pour les admins
             if (isUserAdmin) {
                 embed.addFields({
-                    name: 'Commandes administrateur',
+                    name: 'Commandes administrateur - Sessions',
                     value: '`!addsession <nom> <points> [description]` - Ajouter un type de session\n' +
                         '`!updatesession <id> <nom> <points> [description]` - Modifier un type de session\n' +
                         '`!deletesession <id>` - Supprimer un type de session\n' +
                         '`!setrole <@utilisateur ou ID> <user|staff|admin>` - Définir le rôle d\'un utilisateur'
+                });
+
+                embed.addFields({
+                    name: 'Commandes administrateur - Semestres',
+                    value: '`!createsemester <nom> <date_debut> <date_fin> [note_max]` - Créer un semestre\n' +
+                        '`!updatesemester <id> <nom> <date_debut> <date_fin> [note_max]` - Modifier un semestre\n' +
+                        '`!setactivesemester <id>` - Définir le semestre actif\n' +
+                        '`!deletesemester <id>` - Supprimer un semestre\n' +
+                        '`!configsystem <key> <value> [description]` - Configurer les paramètres système'
                 });
             }
 

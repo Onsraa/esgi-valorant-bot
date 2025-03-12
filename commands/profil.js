@@ -1,21 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { User, SessionHistory } = require('../database/models');
+const { isStaff } = require('../utils/auth');
 const config = require('../config');
-
-// Vérifier si l'utilisateur a un rôle spécifique
-async function hasRole(member, roleId) {
-    return member.roles.cache.has(roleId);
-}
-
-// Vérifier si l'utilisateur est un administrateur
-async function isAdmin(member) {
-    return await hasRole(member, config.adminRoleId);
-}
-
-// Vérifier si l'utilisateur est un membre du staff
-async function isStaff(member) {
-    return await hasRole(member, config.staffRoleId) || await isAdmin(member);
-}
 
 module.exports = {
     names: ['profil', 'profile'], // Aliases de la commande
@@ -26,7 +12,7 @@ module.exports = {
             let targetId;
 
             // Si un argument est fourni et que l'utilisateur est staff, chercher cet utilisateur
-            if (args.length > 0 && await isStaff(message.member)) {
+            if (args.length > 0 && await isStaff(message.author.id)) {
                 // Extraire l'ID de la mention ou utiliser l'argument comme ID
                 targetId = args[0].replace(/[<@!>]/g, '');
             } else {
