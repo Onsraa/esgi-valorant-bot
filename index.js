@@ -1,9 +1,10 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { User } = require('./database/models');
 const { today } = require('./utils/formatters');
+const { setupInteractions } = require('./interactions/setup');
 
 // Créer une nouvelle instance de client Discord
 const client = new Client({
@@ -33,12 +34,12 @@ for (const file of commandFiles) {
 }
 
 // Événement quand le bot est prêt
-client.once('ready', () => {
+client.once(Events.ClientReady, () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 });
 
 // Événement à la réception d'un message
-client.on('messageCreate', async message => {
+client.on(Events.MessageCreate, async message => {
     // Ignorer les messages de bot
     if (message.author.bot) return;
 
@@ -69,6 +70,19 @@ client.on('messageCreate', async message => {
     const args = message.content.slice(config.prefix.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
+    // Commande pour afficher le menu principal
+    if (commandName === 'menu') {
+        try {
+            const { displayMainMenu } = require('./interactions/menu');
+            await displayMainMenu(message);
+            return;
+        } catch (error) {
+            console.error('Erreur lors de l\'affichage du menu principal:', error);
+            message.reply('Une erreur est survenue lors de l\'affichage du menu principal.').catch(console.error);
+            return;
+        }
+    }
+
     // Vérifier si la commande existe
     if (!client.commands.has(commandName)) return;
 
@@ -83,23 +97,8 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Événement pour les interactions (boutons, etc.)
-client.on('interactionCreate', async interaction => {
-    // Traiter uniquement les interactions de composants (boutons, etc.)
-    if (!interaction.isButton()) return;
-
-    // Vérifier si l'interaction concerne une validation d'annonce
-    if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('reject_')) {
-        try {
-            // Charger le gestionnaire d'interactions
-            const handleValidation = require('./events/interactionCreate');
-            await handleValidation(client, interaction);
-        } catch (error) {
-            console.error('Erreur lors du traitement de l\'interaction:', error);
-            interaction.reply({ content: 'Une erreur est survenue lors du traitement de cette interaction.', ephemeral: true }).catch(console.error);
-        }
-    }
-});
+// Configurer les gestionnaires d'interactions
+setupInteractions(client);
 
 // Connexion du bot avec le token
 client.login(config.token);

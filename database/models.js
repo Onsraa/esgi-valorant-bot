@@ -1,5 +1,5 @@
-const { db, runQuery, getOne, getAll } = require('./db');
-const { formatNom, formatPrenom, formatClasse, validateEmail } = require('../utils/formatters');
+const {db, runQuery, getOne, getAll} = require('./db');
+const {formatNom, formatPrenom, formatClasse, validateEmail} = require('../utils/formatters');
 const moment = require('moment');
 
 // Modèle pour les semestres
@@ -105,13 +105,16 @@ const Semester = {
     // Obtenir les points d'un utilisateur pour un semestre spécifique
     async getUserPoints(userId, semesterId) {
         return await getAll(`
-      SELECT sh.user_id, SUM(sh.points_gained) as total_points,
-             st.nom as session_type
-      FROM session_history sh
-      JOIN session_types st ON sh.session_type_id = st.id
-      WHERE sh.user_id = ? AND sh.semester_id = ? AND sh.validated = 1
-      GROUP BY st.id
-    `, [userId, semesterId]);
+            SELECT sh.user_id,
+                   SUM(sh.points_gained) as total_points,
+                   st.nom                as session_type
+            FROM session_history sh
+                     JOIN session_types st ON sh.session_type_id = st.id
+            WHERE sh.user_id = ?
+              AND sh.semester_id = ?
+              AND sh.validated = 1
+            GROUP BY st.id
+        `, [userId, semesterId]);
     },
 
     // Calculer les classements pour un semestre
@@ -130,12 +133,13 @@ const Semester = {
 
         // Récupérer tous les utilisateurs ayant des points dans ce semestre
         const userPoints = await getAll(`
-      SELECT user_id, SUM(points_gained) as total_points
-      FROM session_history
-      WHERE semester_id = ? AND validated = 1
-      GROUP BY user_id
-      ORDER BY total_points DESC
-    `, [semesterId]);
+            SELECT user_id, SUM(points_gained) as total_points
+            FROM session_history
+            WHERE semester_id = ?
+              AND validated = 1
+            GROUP BY user_id
+            ORDER BY total_points DESC
+        `, [semesterId]);
 
         if (!userPoints || userPoints.length === 0) {
             return [];
@@ -150,7 +154,7 @@ const Semester = {
                 db.run('BEGIN TRANSACTION');
 
                 // Supprimer les classements existants pour ce semestre
-                db.run('DELETE FROM semester_rankings WHERE semester_id = ?', [semesterId], function(err) {
+                db.run('DELETE FROM semester_rankings WHERE semester_id = ?', [semesterId], function (err) {
                     if (err) {
                         db.run('ROLLBACK');
                         return reject(err);
@@ -158,9 +162,9 @@ const Semester = {
 
                     // Insérer les nouveaux classements
                     const stmt = db.prepare(`
-            INSERT INTO semester_rankings (semester_id, user_id, total_points, rank, percentile, final_note)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `);
+                        INSERT INTO semester_rankings (semester_id, user_id, total_points, rank, percentile, final_note)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    `);
 
                     userPoints.forEach((user, index) => {
                         const rank = index + 1;
@@ -187,7 +191,7 @@ const Semester = {
 
                     stmt.finalize();
 
-                    db.run('COMMIT', function(err) {
+                    db.run('COMMIT', function (err) {
                         if (err) {
                             db.run('ROLLBACK');
                             return reject(err);
@@ -202,23 +206,24 @@ const Semester = {
     // Obtenir le classement d'un semestre
     async getRankings(semesterId, limit = 100) {
         return await getAll(`
-      SELECT sr.*, u.username, u.nom, u.prenom
-      FROM semester_rankings sr
-      JOIN utilisateurs u ON sr.user_id = u.discord_id
-      WHERE sr.semester_id = ?
-      ORDER BY sr.rank ASC
-      LIMIT ?
-    `, [semesterId, limit]);
+            SELECT sr.*, u.username, u.nom, u.prenom
+            FROM semester_rankings sr
+                     JOIN utilisateurs u ON sr.user_id = u.discord_id
+            WHERE sr.semester_id = ?
+            ORDER BY sr.rank ASC
+            LIMIT ?
+        `, [semesterId, limit]);
     },
 
     // Obtenir le classement d'un utilisateur pour un semestre
     async getUserRanking(userId, semesterId) {
         return await getOne(`
-      SELECT sr.*, u.username, u.nom, u.prenom
-      FROM semester_rankings sr
-      JOIN utilisateurs u ON sr.user_id = u.discord_id
-      WHERE sr.semester_id = ? AND sr.user_id = ?
-    `, [semesterId, userId]);
+            SELECT sr.*, u.username, u.nom, u.prenom
+            FROM semester_rankings sr
+                     JOIN utilisateurs u ON sr.user_id = u.discord_id
+            WHERE sr.semester_id = ?
+              AND sr.user_id = ?
+        `, [semesterId, userId]);
     }
 };
 
@@ -318,16 +323,29 @@ const User = {
     }
 };
 
-// Modèle pour les types de sessions
 const SessionType = {
     // Obtenir tous les types de sessions actifs
     async getAll() {
-        return await getAll('SELECT * FROM session_types WHERE active = 1');
+        return await getAll('SELECT * FROM session_types WHERE active = 1 ORDER BY nom');
     },
 
-    // Obtenir un type de session par son ID
+    // Obtenir tous les types de sessions (actifs et inactifs)
+    async getAllWithInactive() {
+        return await getAll('SELECT * FROM session_types ORDER BY active DESC, nom');
+    },
+
+    // Obtenir un type de session par son ID (même inactif)
     async getById(typeId) {
         return await getOne('SELECT * FROM session_types WHERE id = ?', [typeId]);
+    },
+
+    // Vérifier si un type de session est utilisé dans l'historique
+    async isUsedInHistory(typeId) {
+        const result = await getOne(
+            'SELECT COUNT(*) as count FROM session_history WHERE session_type_id = ?',
+            [typeId]
+        );
+        return result && result.count > 0;
     },
 
     // Créer un nouveau type de session
@@ -348,10 +366,112 @@ const SessionType = {
 
     // Supprimer (désactiver) un type de session
     async delete(typeId) {
-        return await runQuery(
-            'UPDATE session_types SET active = 0 WHERE id = ?',
-            [typeId]
+        // Vérifier d'abord si le type de session est utilisé dans l'historique
+        const isUsed = await SessionType.isUsedInHistory(typeId);
+
+        if (isUsed) {
+            // Si le type est utilisé, juste le désactiver
+            return await runQuery(
+                'UPDATE session_types SET active = 0 WHERE id = ?',
+                [typeId]
+            );
+        } else {
+            // Si le type n'est pas utilisé, le supprimer complètement
+            return await runQuery(
+                'DELETE FROM session_types WHERE id = ?',
+                [typeId]
+            );
+        }
+    }
+};
+
+// Modèle pour l'historique des sessions
+const SessionHistory = {
+    // Obtenir l'historique des sessions d'un utilisateur
+    async getUserHistory(userId) {
+        return await getAll(
+            `SELECT h.id,
+                    h.user_id,
+                    h.session_type_id,
+                    t.nom as session_name,
+                    h.date,
+                    h.count,
+                    h.points_gained,
+                    h.validated,
+                    h.validated_by,
+                    h.semester_id
+             FROM session_history h
+                      JOIN session_types t ON h.session_type_id = t.id
+             WHERE h.user_id = ?
+               AND h.validated = 1
+             ORDER BY h.date DESC`,
+            [userId]
         );
+    },
+
+    // Obtenir l'historique des sessions d'un utilisateur pour un semestre spécifique
+    async getUserHistoryBySemester(userId, semesterId) {
+        return await getAll(
+            `SELECT h.id,
+                    h.user_id,
+                    h.session_type_id,
+                    t.nom as session_name,
+                    h.date,
+                    h.count,
+                    h.points_gained,
+                    h.validated,
+                    h.validated_by
+             FROM session_history h
+                      JOIN session_types t ON h.session_type_id = t.id
+             WHERE h.user_id = ?
+               AND h.semester_id = ?
+               AND h.validated = 1
+             ORDER BY h.date DESC`,
+            [userId, semesterId]
+        );
+    },
+
+    // Obtenir les points par type de session pour un utilisateur (inclut les types inactifs)
+    async getUserPointsByType(userId) {
+        return await getAll(
+            `SELECT t.nom, SUM(h.points_gained) as total_points
+             FROM session_history h
+                      JOIN session_types t ON h.session_type_id = t.id
+             WHERE h.user_id = ?
+               AND h.validated = 1
+             GROUP BY t.id
+             ORDER BY total_points DESC`,
+            [userId]
+        );
+    },
+
+    // Obtenir les points par type de session pour un utilisateur et un semestre (inclut les types inactifs)
+    async getUserPointsByTypeAndSemester(userId, semesterId) {
+        return await getAll(
+            `SELECT t.nom, SUM(h.points_gained) as total_points
+             FROM session_history h
+                      JOIN session_types t ON h.session_type_id = t.id
+             WHERE h.user_id = ?
+               AND h.semester_id = ?
+               AND h.validated = 1
+             GROUP BY t.id
+             ORDER BY total_points DESC`,
+            [userId, semesterId]
+        );
+    },
+
+    // Obtenir le total des points pour un utilisateur et un semestre
+    async getUserTotalPointsBySemester(userId, semesterId) {
+        const result = await getOne(
+            `SELECT SUM(points_gained) as total_points
+             FROM session_history
+             WHERE user_id = ?
+               AND semester_id = ?
+               AND validated = 1`,
+            [userId, semesterId]
+        );
+
+        return result ? result.total_points || 0 : 0;
     }
 };
 
@@ -401,9 +521,9 @@ const PendingSession = {
         // Récupérer les détails
         const details = await getAll(
             `SELECT d.id, d.pending_id, d.session_type_id, t.nom as session_name, d.count
-       FROM pending_session_details d
-       JOIN session_types t ON d.session_type_id = t.id
-       WHERE d.pending_id = ?`,
+             FROM pending_session_details d
+                      JOIN session_types t ON d.session_type_id = t.id
+             WHERE d.pending_id = ?`,
             [pendingId]
         );
 
@@ -414,19 +534,19 @@ const PendingSession = {
     // Obtenir toutes les sessions en attente
     async getPending() {
         const pendingSessions = await getAll(
-            `SELECT id, user_id, date, submitted_at, status 
-       FROM pending_sessions 
-       WHERE status = 'pending'
-       ORDER BY submitted_at DESC`
+            `SELECT id, user_id, date, submitted_at, status
+             FROM pending_sessions
+             WHERE status = 'pending'
+             ORDER BY submitted_at DESC`
         );
 
         // Récupérer les détails pour chaque session
         for (const session of pendingSessions) {
             session.details = await getAll(
                 `SELECT d.id, d.pending_id, d.session_type_id, t.nom as session_name, d.count
-         FROM pending_session_details d
-         JOIN session_types t ON d.session_type_id = t.id
-         WHERE d.pending_id = ?`,
+                 FROM pending_session_details d
+                          JOIN session_types t ON d.session_type_id = t.id
+                 WHERE d.pending_id = ?`,
                 [session.id]
             );
         }
@@ -446,7 +566,7 @@ const PendingSession = {
                 db.run(
                     'UPDATE pending_sessions SET status = ? WHERE id = ?',
                     [status, pendingId],
-                    async function(err) {
+                    async function (err) {
                         if (err) {
                             db.run('ROLLBACK');
                             return reject(err);
@@ -461,26 +581,48 @@ const PendingSession = {
                                 let currentSemester = await Semester.getActive();
                                 const semesterId = currentSemester ? currentSemester.id : null;
 
+                                // Vérifier si la table session_history a la colonne semester_id
+                                const tableInfo = await getAll("PRAGMA table_info(session_history)");
+                                const hasSemesterId = tableInfo.some(col => col.name === 'semester_id');
+
                                 for (const detail of pendingSession.details) {
                                     // Récupérer le type de session pour connaître les points
                                     const sessionType = await SessionType.getById(detail.session_type_id);
                                     const pointsGained = sessionType.points * detail.count;
 
-                                    // Ajouter à l'historique
-                                    await runQuery(
-                                        `INSERT INTO session_history 
-                     (user_id, session_type_id, date, count, points_gained, validated, validated_by, semester_id) 
-                     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-                                        [
-                                            pendingSession.user_id,
-                                            detail.session_type_id,
-                                            pendingSession.date,
-                                            detail.count,
-                                            pointsGained,
-                                            validatorId,
-                                            semesterId
-                                        ]
-                                    );
+                                    // Ajouter à l'historique en tenant compte de la présence ou non de semester_id
+                                    if (hasSemesterId) {
+                                        await runQuery(
+                                            `INSERT INTO session_history
+                                             (user_id, session_type_id, date, count, points_gained, validated,
+                                              validated_by, semester_id)
+                                             VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+                                            [
+                                                pendingSession.user_id,
+                                                detail.session_type_id,
+                                                pendingSession.date,
+                                                detail.count,
+                                                pointsGained,
+                                                validatorId,
+                                                semesterId
+                                            ]
+                                        );
+                                    } else {
+                                        await runQuery(
+                                            `INSERT INTO session_history
+                                             (user_id, session_type_id, date, count, points_gained, validated,
+                                              validated_by)
+                                             VALUES (?, ?, ?, ?, ?, 1, ?)`,
+                                            [
+                                                pendingSession.user_id,
+                                                detail.session_type_id,
+                                                pendingSession.date,
+                                                detail.count,
+                                                pointsGained,
+                                                validatorId
+                                            ]
+                                        );
+                                    }
 
                                     // Mettre à jour le score total de l'utilisateur
                                     await runQuery(
@@ -489,7 +631,7 @@ const PendingSession = {
                                     );
                                 }
 
-                                db.run('COMMIT', function(err) {
+                                db.run('COMMIT', function (err) {
                                     if (err) {
                                         db.run('ROLLBACK');
                                         return reject(err);
@@ -501,7 +643,7 @@ const PendingSession = {
                                 reject(error);
                             }
                         } else {
-                            db.run('COMMIT', function(err) {
+                            db.run('COMMIT', function (err) {
                                 if (err) {
                                     db.run('ROLLBACK');
                                     return reject(err);
@@ -513,73 +655,6 @@ const PendingSession = {
                 );
             });
         });
-    }
-};
-
-// Modèle pour l'historique des sessions
-const SessionHistory = {
-    // Obtenir l'historique des sessions d'un utilisateur
-    async getUserHistory(userId) {
-        return await getAll(
-            `SELECT h.id, h.user_id, h.session_type_id, t.nom as session_name, h.date, 
-              h.count, h.points_gained, h.validated, h.validated_by, h.semester_id
-       FROM session_history h
-       JOIN session_types t ON h.session_type_id = t.id
-       WHERE h.user_id = ? AND h.validated = 1
-       ORDER BY h.date DESC`,
-            [userId]
-        );
-    },
-
-    // Obtenir l'historique des sessions d'un utilisateur pour un semestre spécifique
-    async getUserHistoryBySemester(userId, semesterId) {
-        return await getAll(
-            `SELECT h.id, h.user_id, h.session_type_id, t.nom as session_name, h.date, 
-              h.count, h.points_gained, h.validated, h.validated_by
-       FROM session_history h
-       JOIN session_types t ON h.session_type_id = t.id
-       WHERE h.user_id = ? AND h.semester_id = ? AND h.validated = 1
-       ORDER BY h.date DESC`,
-            [userId, semesterId]
-        );
-    },
-
-    // Obtenir les points par type de session pour un utilisateur
-    async getUserPointsByType(userId) {
-        return await getAll(
-            `SELECT t.nom, SUM(h.points_gained) as total_points
-       FROM session_history h
-       JOIN session_types t ON h.session_type_id = t.id
-       WHERE h.user_id = ? AND h.validated = 1
-       GROUP BY t.id
-       ORDER BY total_points DESC`,
-            [userId]
-        );
-    },
-
-    // Obtenir les points par type de session pour un utilisateur et un semestre
-    async getUserPointsByTypeAndSemester(userId, semesterId) {
-        return await getAll(
-            `SELECT t.nom, SUM(h.points_gained) as total_points
-       FROM session_history h
-       JOIN session_types t ON h.session_type_id = t.id
-       WHERE h.user_id = ? AND h.semester_id = ? AND h.validated = 1
-       GROUP BY t.id
-       ORDER BY total_points DESC`,
-            [userId, semesterId]
-        );
-    },
-
-    // Obtenir le total des points pour un utilisateur et un semestre
-    async getUserTotalPointsBySemester(userId, semesterId) {
-        const result = await getOne(
-            `SELECT SUM(points_gained) as total_points
-       FROM session_history
-       WHERE user_id = ? AND semester_id = ? AND validated = 1`,
-            [userId, semesterId]
-        );
-
-        return result ? result.total_points || 0 : 0;
     }
 };
 
