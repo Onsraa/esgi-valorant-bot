@@ -11,11 +11,13 @@ async function handleProfileInteraction(interaction) {
 
     // Affichage du profil
     if (buttonId === 'profile_view') {
+        // Différer la réponse seulement pour l'affichage du profil
+        await interaction.deferUpdate().catch(console.error);
         await displayProfile(interaction, interaction.user.id);
         return;
     }
 
-    // Édition du profil
+    // Édition du profil - NE PAS différer pour les modals
     if (buttonId === 'profile_edit') {
         await showProfileEditModal(interaction);
         return;
@@ -23,9 +25,12 @@ async function handleProfileInteraction(interaction) {
 
     // Voir le profil d'un autre utilisateur (staff/admin uniquement)
     if (buttonId === 'admin_view_user') {
+        // Différer la réponse pour cette action
+        await interaction.deferUpdate().catch(console.error);
+
         // Vérifier si l'utilisateur est staff
         if (!(await isStaff(interaction.user.id))) {
-            await interaction.reply({
+            await interaction.editReply({
                 content: 'Vous n\'avez pas les permissions nécessaires pour effectuer cette action.',
                 ephemeral: true
             });
@@ -39,6 +44,8 @@ async function handleProfileInteraction(interaction) {
 
     // Retour au menu principal
     if (buttonId === 'profile_back') {
+        // Différer la réponse pour le retour au menu
+        await interaction.deferUpdate().catch(console.error);
         const { displayMainMenu } = require('./menu');
         await displayMainMenu(interaction);
         return;
@@ -50,6 +57,9 @@ async function handleProfileInteraction(interaction) {
  * @param {SelectMenuInteraction} interaction - L'interaction du menu de sélection
  */
 async function handleProfileSelection(interaction) {
+    // Différer la réponse immédiatement
+    await interaction.deferUpdate().catch(console.error);
+
     const userId = interaction.values[0];
     await displayProfile(interaction, userId);
 }
@@ -60,114 +70,116 @@ async function handleProfileSelection(interaction) {
  * @param {string} userId - L'ID de l'utilisateur à afficher
  */
 async function displayProfile(interaction, userId) {
-    // Récupérer l'utilisateur
-    const user = await User.getById(userId);
-
-    if (!user) {
-        await interaction.reply({
-            content: 'Utilisateur non trouvé dans la base de données.',
-            ephemeral: true
-        });
-        return;
-    }
-
-    // Récupérer le membre Discord pour afficher son nom
-    let username = user.username;
     try {
-        const member = await interaction.guild.members.fetch(userId);
-        username = member.user.username;
-    } catch (error) {
-        console.error('Impossible de récupérer le membre Discord:', error);
-    }
+        // Récupérer l'utilisateur
+        const user = await User.getById(userId);
 
-    // Créer l'embed du profil
-    const embed = new EmbedBuilder()
-        .setTitle(`Profil de ${username}`)
-        .setColor(0x0099FF);
+        if (!user) {
+            await interaction.editReply({
+                content: 'Utilisateur non trouvé dans la base de données.',
+                embeds: [],
+                components: []
+            });
+            return;
+        }
 
-    // Si l'utilisateur a un avatar, l'ajouter à l'embed
-    try {
-        const member = await interaction.guild.members.fetch(userId);
-        embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true }));
-    } catch (error) {
-        // Ne pas afficher d'avatar si non disponible
-    }
+        // Récupérer le membre Discord pour afficher son nom
+        let username = user.username;
+        try {
+            const member = await interaction.guild.members.fetch(userId);
+            username = member.user.username;
+        } catch (error) {
+            console.error('Impossible de récupérer le membre Discord:', error);
+        }
 
-    // Informations de base
-    if (User.isProfileComplete(user)) {
+        // Créer l'embed du profil
+        const embed = new EmbedBuilder()
+            .setTitle(`Profil de ${username}`)
+            .setColor(0x0099FF);
+
+        // Si l'utilisateur a un avatar, l'ajouter à l'embed
+        try {
+            const member = await interaction.guild.members.fetch(userId);
+            embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true }));
+        } catch (error) {
+            // Ne pas afficher d'avatar si non disponible
+        }
+
+        // Informations de base
+        if (User.isProfileComplete(user)) {
+            embed.addFields(
+                { name: 'Nom', value: user.nom, inline: true },
+                { name: 'Prénom', value: user.prenom, inline: true },
+                { name: 'Classe', value: user.classe, inline: true },
+                { name: 'Email', value: user.email }
+            );
+        } else {
+            embed.setDescription('**Profil incomplet**\nUtilisez le bouton "Éditer Profil" pour compléter votre profil.');
+        }
+
+        // Score total
+        embed.addFields({ name: 'Score total', value: user.score_total.toString() });
+
+        // Points par type de session
+        const pointsByType = await SessionHistory.getUserPointsByType(userId);
+
+        if (pointsByType && pointsByType.length > 0) {
+            const pointsText = pointsByType
+                .map(({ nom, total_points }) => `**${nom}**: ${total_points} points`)
+                .join('\n');
+
+            embed.addFields({ name: 'Points par type de session', value: pointsText });
+        } else {
+            embed.addFields({ name: 'Points par type de session', value: 'Aucune session enregistrée' });
+        }
+
+        // Date d'inscription et dernière activité
         embed.addFields(
-            { name: 'Nom', value: user.nom, inline: true },
-            { name: 'Prénom', value: user.prenom, inline: true },
-            { name: 'Classe', value: user.classe, inline: true },
-            { name: 'Email', value: user.email }
-        );
-    } else {
-        embed.setDescription('**Profil incomplet**\nUtilisez le bouton "Éditer Profil" pour compléter votre profil.');
-    }
-
-    // Score total
-    embed.addFields({ name: 'Score total', value: user.score_total.toString() });
-
-    // Points par type de session
-    const pointsByType = await SessionHistory.getUserPointsByType(userId);
-
-    if (pointsByType && pointsByType.length > 0) {
-        const pointsText = pointsByType
-            .map(({ nom, total_points }) => `**${nom}**: ${total_points} points`)
-            .join('\n');
-
-        embed.addFields({ name: 'Points par type de session', value: pointsText });
-    } else {
-        embed.addFields({ name: 'Points par type de session', value: 'Aucune session enregistrée' });
-    }
-
-    // Date d'inscription et dernière activité
-    embed.addFields(
-        { name: 'Date d\'inscription', value: user.date_join, inline: true },
-        { name: 'Dernière activité', value: user.last_active, inline: true }
-    );
-
-    // Rôle
-    const roleText = {
-        'admin': 'Administrateur',
-        'staff': 'Staff',
-        'user': 'Membre'
-    }[user.role] || 'Membre';
-
-    embed.addFields({ name: 'Rôle', value: roleText, inline: true });
-
-    // Boutons de navigation
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('profile_back')
-                .setLabel('Retour au menu')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('⬅️')
+            { name: 'Date d\'inscription', value: user.date_join, inline: true },
+            { name: 'Dernière activité', value: user.last_active, inline: true }
         );
 
-    // Ajouter un bouton d'édition si c'est le profil de l'utilisateur actuel
-    if (userId === interaction.user.id) {
-        row.addComponents(
-            new ButtonBuilder()
-                .setCustomId('profile_edit')
-                .setLabel('Éditer profil')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('✏️')
-        );
-    }
+        // Rôle
+        const roleText = {
+            'admin': 'Administrateur',
+            'staff': 'Staff',
+            'user': 'Membre'
+        }[user.role] || 'Membre';
 
-    // Envoyer ou mettre à jour l'interaction
-    if (interaction.deferred) {
+        embed.addFields({ name: 'Rôle', value: roleText, inline: true });
+
+        // Boutons de navigation
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('profile_back')
+                    .setLabel('Retour au menu')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
+            );
+
+        // Ajouter un bouton d'édition si c'est le profil de l'utilisateur actuel
+        if (userId === interaction.user.id) {
+            row.addComponents(
+                new ButtonBuilder()
+                    .setCustomId('profile_edit')
+                    .setLabel('Éditer profil')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('✏️')
+            );
+        }
+
+        // Toujours utiliser editReply
         await interaction.editReply({
             embeds: [embed],
             components: [row]
         });
-    } else {
-        await interaction.update({
-            embeds: [embed],
-            components: [row]
-        });
+    } catch (error) {
+        console.error('Erreur lors de l\'affichage du profil:', error);
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors de l\'affichage du profil.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -204,14 +216,17 @@ async function displayUserSelector(interaction) {
                     .setEmoji('⬅️')
             );
 
-        await interaction.update({
+        await interaction.editReply({
             content: 'Veuillez sélectionner un utilisateur:',
             embeds: [],
             components: [row, backButton]
         });
     } catch (error) {
         console.error('Erreur lors de l\'affichage du sélecteur d\'utilisateurs:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors de la récupération des utilisateurs.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -278,7 +293,12 @@ async function showProfileEditModal(interaction) {
         await interaction.showModal(modal);
     } catch (error) {
         console.error('Erreur lors de l\'affichage du modal d\'édition de profil:', error);
-        throw error;
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: 'Une erreur est survenue lors de l\'affichage du formulaire d\'édition.',
+                ephemeral: true
+            }).catch(console.error);
+        }
     }
 }
 
@@ -287,6 +307,9 @@ async function showProfileEditModal(interaction) {
  * @param {ModalSubmitInteraction} interaction - L'interaction du formulaire modal
  */
 async function handleProfileSubmit(interaction) {
+    // Pour les modals, on utilise deferReply car c'est une nouvelle interaction
+    await interaction.deferReply({ ephemeral: true }).catch(console.error);
+
     try {
         // Récupérer les valeurs du formulaire
         const nom = interaction.fields.getTextInputValue('nom');
@@ -325,7 +348,7 @@ async function handleProfileSubmit(interaction) {
                         .setEmoji('⬅️')
                 );
 
-            await interaction.reply({
+            await interaction.editReply({
                 embeds: [embed],
                 components: [row],
                 ephemeral: true
@@ -333,13 +356,13 @@ async function handleProfileSubmit(interaction) {
         } catch (error) {
             // Si l'erreur concerne l'email, afficher un message spécifique
             if (error.message.includes('email')) {
-                await interaction.reply({
+                await interaction.editReply({
                     content: `Erreur: ${error.message}`,
                     ephemeral: true
                 });
             } else {
                 console.error('Erreur lors de la mise à jour du profil:', error);
-                await interaction.reply({
+                await interaction.editReply({
                     content: 'Une erreur est survenue lors de la mise à jour du profil.',
                     ephemeral: true
                 });
@@ -347,7 +370,10 @@ async function handleProfileSubmit(interaction) {
         }
     } catch (error) {
         console.error('Erreur lors du traitement du formulaire de profil:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors du traitement du formulaire.',
+            ephemeral: true
+        }).catch(console.error);
     }
 }
 

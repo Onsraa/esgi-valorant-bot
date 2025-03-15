@@ -8,6 +8,12 @@ const { isAdmin, isStaff } = require('../utils/auth');
 async function displayMainMenu(source) {
     try {
         const isMessage = !source.isButton;
+
+        // Pour les boutons, différer la mise à jour SEULEMENT si ce n'est pas déjà fait
+        if (!isMessage && !source.deferred && !source.replied) {
+            await source.deferUpdate().catch(console.error);
+        }
+
         const userId = isMessage ? source.author.id : source.user.id;
 
         // Vérifier les rôles de l'utilisateur
@@ -119,13 +125,21 @@ async function displayMainMenu(source) {
                 components: components
             });
         } else {
-            return await source.update({
+            return await source.editReply({
                 embeds: [embed],
                 components: components
             });
         }
     } catch (error) {
         console.error('Erreur lors de l\'affichage du menu principal:', error);
+
+        if (!isMessage && source.deferred) {
+            await source.editReply({
+                content: 'Une erreur est survenue lors de l\'affichage du menu principal.',
+                components: []
+            }).catch(console.error);
+        }
+
         throw error;
     }
 }

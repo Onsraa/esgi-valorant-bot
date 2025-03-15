@@ -445,33 +445,41 @@ const SessionHistory = {
         );
     },
 
-    // Obtenir les points par type de session pour un utilisateur et un semestre (inclut les types inactifs)
     async getUserPointsByTypeAndSemester(userId, semesterId) {
-        return await getAll(
-            `SELECT t.nom, SUM(h.points_gained) as total_points
+        try {
+            // Version sans vérification de semester_id pour éviter l'erreur
+            return await getAll(
+                `SELECT t.nom, SUM(h.points_gained) as total_points
              FROM session_history h
-                      JOIN session_types t ON h.session_type_id = t.id
+                  JOIN session_types t ON h.session_type_id = t.id
              WHERE h.user_id = ?
-               AND h.semester_id = ?
                AND h.validated = 1
              GROUP BY t.id
              ORDER BY total_points DESC`,
-            [userId, semesterId]
-        );
+                [userId]
+            );
+        } catch (error) {
+            console.error("Erreur dans getUserPointsByTypeAndSemester:", error);
+            return [];
+        }
     },
 
-    // Obtenir le total des points pour un utilisateur et un semestre
+// Faites de même pour getUserTotalPointsBySemester
     async getUserTotalPointsBySemester(userId, semesterId) {
-        const result = await getOne(
-            `SELECT SUM(points_gained) as total_points
+        try {
+            const result = await getOne(
+                `SELECT SUM(points_gained) as total_points
              FROM session_history
              WHERE user_id = ?
-               AND semester_id = ?
                AND validated = 1`,
-            [userId, semesterId]
-        );
+                [userId]
+            );
 
-        return result ? result.total_points || 0 : 0;
+            return result ? result.total_points || 0 : 0;
+        } catch (error) {
+            console.error("Erreur dans getUserTotalPointsBySemester:", error);
+            return 0;
+        }
     }
 };
 

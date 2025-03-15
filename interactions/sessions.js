@@ -10,6 +10,14 @@ const config = require('../config');
  * @param {ButtonInteraction} interaction - L'interaction bouton
  */
 async function handleSessionsInteraction(interaction) {
+    // Vérifier si l'interaction a déjà été traitée
+    if (!interaction.deferred && !interaction.replied) {
+        // Différer la réponse immédiatement sauf pour certains cas
+        if (interaction.customId !== 'sessions_submit') {
+            await interaction.deferUpdate().catch(console.error);
+        }
+    }
+
     const buttonId = interaction.customId;
 
     // Valider les sessions
@@ -43,6 +51,7 @@ async function handleSessionsInteraction(interaction) {
         return;
     }
 }
+
 /**
  * Affiche la liste des types de sessions
  * @param {ButtonInteraction} interaction - L'interaction bouton
@@ -53,7 +62,7 @@ async function displaySessionTypes(interaction) {
         const sessionTypes = await SessionType.getAll();
 
         if (!sessionTypes || sessionTypes.length === 0) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Aucun type de session configuré.',
                 embeds: [],
                 components: []
@@ -82,13 +91,16 @@ async function displaySessionTypes(interaction) {
                     .setEmoji('⬅️')
             );
 
-        await interaction.update({
+        await interaction.editReply({
             embeds: [embed],
             components: [row]
         });
     } catch (error) {
         console.error('Erreur lors de l\'affichage des types de sessions:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors de l\'affichage des types de sessions.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -102,7 +114,7 @@ async function startSessionAnnouncement(interaction) {
         const user = await User.getById(interaction.user.id);
 
         if (!user) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Vous n\'êtes pas enregistré dans la base de données.',
                 embeds: [],
                 components: []
@@ -126,7 +138,7 @@ async function startSessionAnnouncement(interaction) {
                         .setEmoji('⬅️')
                 );
 
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Vous devez compléter votre profil avant de pouvoir annoncer des sessions.',
                 embeds: [],
                 components: [row]
@@ -138,7 +150,7 @@ async function startSessionAnnouncement(interaction) {
         const sessionTypes = await SessionType.getAll();
 
         if (!sessionTypes || sessionTypes.length === 0) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Aucun type de session n\'est configuré.',
                 embeds: [],
                 components: []
@@ -186,13 +198,16 @@ async function startSessionAnnouncement(interaction) {
         sessionTypes.forEach(type => userCounts.set(type.id.toString(), 0));
         sessionData.set(interaction.user.id, userCounts);
 
-        await interaction.update({
+        await interaction.editReply({
             embeds: [embed],
             components: [typeSelector, actionRow]
         });
     } catch (error) {
         console.error('Erreur lors du démarrage de l\'annonce de sessions:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors du démarrage de l\'annonce de sessions.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -201,6 +216,11 @@ async function startSessionAnnouncement(interaction) {
  * @param {SelectMenuInteraction} interaction - L'interaction de sélection
  */
 async function handleSessionTypeSelection(interaction) {
+    // Différer la réponse immédiatement si ce n'est pas déjà fait
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(console.error);
+    }
+
     try {
         const selectedTypeId = interaction.values[0];
 
@@ -216,7 +236,7 @@ async function handleSessionTypeSelection(interaction) {
         const selectedType = sessionTypes.find(type => type.id.toString() === selectedTypeId);
 
         if (!selectedType) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Type de session non trouvé. Veuillez réessayer.',
                 components: []
             });
@@ -287,13 +307,16 @@ async function handleSessionTypeSelection(interaction) {
             );
         }
 
-        await interaction.update({
+        await interaction.editReply({
             embeds: [embed],
             components: [typeSelector, actionRow]
         });
     } catch (error) {
         console.error('Erreur lors de la sélection d\'un type de session:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors de la sélection du type de session.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -303,8 +326,10 @@ async function handleSessionTypeSelection(interaction) {
  */
 async function handleSessionSubmit(interaction) {
     try {
-        // Différer la réponse pour éviter les timeouts
-        await interaction.deferUpdate();
+        // Différer la réponse si nécessaire
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate().catch(console.error);
+        }
 
         // Vérifier que les données de session existent
         if (!sessionData || !sessionData.has(interaction.user.id)) {
@@ -437,7 +462,7 @@ async function displayPendingSessions(interaction) {
     try {
         // Vérifier que l'utilisateur est staff
         if (!(await isStaff(interaction.user.id))) {
-            await interaction.reply({
+            await interaction.editReply({
                 content: 'Vous n\'avez pas les permissions nécessaires pour effectuer cette action.',
                 ephemeral: true
             });
@@ -447,7 +472,7 @@ async function displayPendingSessions(interaction) {
         const pendingSessions = await PendingSession.getPending();
 
         if (!pendingSessions || pendingSessions.length === 0) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Aucune annonce en attente.',
                 embeds: [],
                 components: []
@@ -506,13 +531,16 @@ async function displayPendingSessions(interaction) {
 
         components.push(backRow);
 
-        await interaction.update({
+        await interaction.editReply({
             embeds: [embed],
             components: components
         });
     } catch (error) {
         console.error('Erreur lors de l\'affichage des annonces en attente:', error);
-        throw error;
+        await interaction.editReply({
+            content: 'Une erreur est survenue lors de l\'affichage des annonces en attente.',
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -522,10 +550,15 @@ async function displayPendingSessions(interaction) {
  * @param {ButtonInteraction} interaction - L'interaction bouton
  */
 async function handleValidationInteraction(client, interaction) {
+    // Différer la réponse immédiatement si ce n'est pas déjà fait
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(console.error);
+    }
+
     try {
         // Vérifier que l'utilisateur est staff ou admin
         if (!(await isStaff(interaction.user.id))) {
-            await interaction.reply({
+            await interaction.editReply({
                 content: 'Vous n\'avez pas les permissions nécessaires pour effectuer cette action.',
                 ephemeral: true
             });
@@ -536,9 +569,6 @@ async function handleValidationInteraction(client, interaction) {
         const customId = interaction.customId;
         const approve = customId.startsWith('approve_');
         const pendingId = parseInt(customId.substring(approve ? 8 : 7));
-
-        // Différer la réponse pour avoir le temps de traiter
-        await interaction.deferUpdate();
 
         // Récupérer la session en attente
         const pendingSession = await PendingSession.getById(pendingId);
@@ -614,17 +644,10 @@ async function handleValidationInteraction(client, interaction) {
         });
     } catch (error) {
         console.error('Erreur lors du traitement de l\'interaction de validation:', error);
-
-        // Essayer de répondre à l'interaction
-        try {
-            if (interaction.deferred) {
-                await interaction.editReply({ content: `Erreur: ${error.message}` });
-            } else {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
-            }
-        } catch (replyError) {
-            console.error('Erreur lors de la réponse à l\'interaction:', replyError);
-        }
+        await interaction.editReply({
+            content: `Erreur: ${error.message}`,
+            components: []
+        }).catch(console.error);
     }
 }
 
@@ -632,5 +655,6 @@ module.exports = {
     handleSessionsInteraction,
     handleSessionTypeSelection,
     handleSessionSubmit,
-    handleValidationInteraction
+    handleValidationInteraction,
+    displayPendingSessions  // Ajouté à l'export
 };

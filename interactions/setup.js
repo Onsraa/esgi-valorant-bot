@@ -19,6 +19,7 @@ function setupInteractions(client) {
 
             // Gérer les interactions de boutons
             if (interaction.isButton()) {
+                // Pas besoin de deferUpdate/deferReply ici, car chaque gestionnaire spécifique le fera
                 const buttonId = interaction.customId;
 
                 // Menu principal
@@ -52,27 +53,27 @@ function setupInteractions(client) {
 
                     // Cas spécifiques
                     if (buttonId === 'admin_semester_management') {
-                        await semesterHandler.displaySemesterManagement(interaction);
+                        await semesterHandler.handleSemesterInteraction(interaction);
                         return;
                     }
 
                     if (buttonId === 'admin_session_management') {
-                        await adminHandler.displaySessionManagement(interaction);
+                        await adminHandler.handleAdminInteraction(interaction);
                         return;
                     }
 
                     if (buttonId === 'admin_role_management') {
-                        await adminHandler.displayRoleManagement(interaction);
+                        await adminHandler.handleAdminInteraction(interaction);
                         return;
                     }
 
                     if (buttonId === 'admin_view_user') {
-                        await profileHandler.displayUserSelector(interaction);
+                        await profileHandler.handleProfileInteraction(interaction);
                         return;
                     }
 
                     if (buttonId === 'admin_pending_list') {
-                        await sessionsHandler.displayPendingSessions(interaction);
+                        await sessionsHandler.handleSessionsInteraction(interaction);
                         return;
                     }
 
@@ -95,15 +96,37 @@ function setupInteractions(client) {
 
                 // Voir les points d'un utilisateur (bouton explicite)
                 if (buttonId.startsWith('view_points_')) {
+                    await interaction.deferUpdate().catch(console.error);
                     const userId = buttonId.split('_').pop();
-                    // Utiliser le semestre sélectionné ou le semestre actif
-                    // Ajoutez la logique ici...
+
+                    try {
+                        // Récupérer le semestre actif
+                        const activeSemester = await semesterHandler.getActiveSemester();
+
+                        if (!activeSemester) {
+                            await interaction.editReply({
+                                content: 'Aucun semestre actif n\'est configuré.',
+                                components: []
+                            });
+                            return;
+                        }
+
+                        // Afficher les points de l'utilisateur pour le semestre actif
+                        await semesterHandler.displayUserPoints(interaction, userId, activeSemester.id);
+                    } catch (error) {
+                        console.error('Erreur lors de l\'affichage des points:', error);
+                        await interaction.editReply({
+                            content: 'Une erreur est survenue lors de l\'affichage des points.',
+                            components: []
+                        });
+                    }
                     return;
                 }
             }
 
             // Gérer les sélecteurs
             if (interaction.isStringSelectMenu()) {
+                // Pas besoin de deferUpdate/deferReply ici, car chaque gestionnaire spécifique le fera
                 const selectId = interaction.customId;
 
                 console.log(`Sélecteur activé: ${selectId}`);
@@ -124,11 +147,7 @@ function setupInteractions(client) {
                 }
 
                 // Handle semester selectors
-                if (selectId === 'semester_points_selector' ||
-                    selectId === 'semester_ranking_selector' ||
-                    selectId === 'semester_edit_selector' ||
-                    selectId === 'semester_activate_selector' ||
-                    selectId === 'semester_delete_selector') {
+                if (selectId.startsWith('semester_')) {
                     await semesterHandler.handleSemesterSelection(interaction);
                     return;
                 }
@@ -151,7 +170,7 @@ function setupInteractions(client) {
 
                 console.log(`Modal soumis: ${modalId}`);
 
-                if (modalId.startsWith('edit_profile_')) {
+                if (modalId === 'edit_profile_modal') {
                     await profileHandler.handleProfileSubmit(interaction);
                     return;
                 }
@@ -167,7 +186,7 @@ function setupInteractions(client) {
                 }
 
                 if (modalId === 'config_system_modal') {
-                    await adminHandler.updateSystemConfig(interaction);
+                    await adminHandler.handleAdminSubmit(interaction);
                     return;
                 }
             }

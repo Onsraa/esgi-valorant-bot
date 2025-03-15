@@ -344,11 +344,16 @@ async function displayUserPoints(interaction, userId, semesterId) {
  */
 async function selectSemesterForRanking(interaction) {
     try {
+        // Différer la réponse si nécessaire
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate().catch(console.error);
+        }
+
         const semesters = await Semester.getAll();
         const activeSemester = await Semester.getActive();
 
         if (!semesters || semesters.length === 0) {
-            await interaction.update({
+            await interaction.editReply({
                 content: 'Aucun semestre configuré.',
                 embeds: [],
                 components: []
@@ -377,11 +382,12 @@ async function selectSemesterForRanking(interaction) {
                     .addOptions(options)
             );
 
+        // CORRECTION : Utilisez l'ID de l'utilisateur actuel, pas une variable non définie
         const validateRow = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`view_points_${userId}`)
-                    .setLabel('Voir mes points')
+                    .setCustomId(`view_ranking`)  // Simplifiez l'ID
+                    .setLabel('Voir le classement')
                     .setStyle(ButtonStyle.Primary)
                     .setEmoji('🔍')
             );
@@ -395,7 +401,7 @@ async function selectSemesterForRanking(interaction) {
                     .setEmoji('⬅️')
             );
 
-        await interaction.update({
+        await interaction.editReply({
             content: 'Sélectionnez un semestre pour voir le classement:',
             embeds: [],
             components: [row, validateRow, backButton]
@@ -1203,5 +1209,7 @@ async function showSystemConfigModal(interaction) {
 module.exports = {
     handleSemesterInteraction,
     handleSemesterSelection,
-    handleSemesterSubmit
+    handleSemesterSubmit,
+    displayUserPoints,
+    getActiveSemester: Semester.getActive
 };
